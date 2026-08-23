@@ -259,6 +259,11 @@ div[role="dialog"] h2 {
     font-weight: 500;
     line-height: 1.1;
 }
+[data-testid="stFileUploaderDropzone"] {
+    border: 1px solid #ff4b4b !important;
+    border-radius: 8px !important;
+    background-color: rgba(255, 75, 75, 0.08) !important;
+}
     </style>
     """),
     unsafe_allow_html=True
@@ -1050,6 +1055,45 @@ def save_batch_predictions_to_history(
     return saved_prediction_ids
 initialize_prediction_history_database()
 
+def delete_predictions_from_history(
+    prediction_ids
+):
+    """
+    Permanently delete selected prediction records
+    from the prediction-history database.
+    """
+
+    prediction_ids = [
+        str(prediction_id).strip()
+        for prediction_id in prediction_ids
+        if str(prediction_id).strip()
+    ]
+
+    if not prediction_ids:
+        return 0
+
+    placeholders = ",".join(
+        "?"
+        for _ in prediction_ids
+    )
+
+    with sqlite3.connect(
+        PREDICTION_HISTORY_DB_PATH
+    ) as connection:
+
+        cursor = connection.execute(
+            f"""
+            DELETE FROM prediction_history
+            WHERE prediction_id IN ({placeholders})
+            """,
+            prediction_ids
+        )
+
+        connection.commit()
+
+        deleted_count = cursor.rowcount
+
+    return deleted_count
 def load_prediction_history():
     """
     Load all saved single-patient prediction records
@@ -1184,7 +1228,19 @@ def validate_patient_input(patient_data):
             errors.append(
                 f"{feature} contains a non-numeric value."
             )
-
+    required_numeric_features = [
+        "Age",
+        "MaxHR",
+        "Oldpeak"
+    ]
+    
+    for feature in required_numeric_features:
+    
+        if cleaned_data[feature].isna().any():
+    
+            errors.append(
+                f"{feature} cannot be empty."
+            )
     # --------------------------------------------------------
     # FastingBS validation
     # --------------------------------------------------------
@@ -1203,17 +1259,23 @@ def validate_patient_input(patient_data):
         &
         cleaned_data["FastingBS"].isna()
     )
-
+    
     if invalid_fasting.any():
-
+    
         errors.append(
             "FastingBS must contain a numeric value."
         )
-
+    
+    elif cleaned_data["FastingBS"].isna().any():
+    
+        errors.append(
+            "FastingBS cannot be empty."
+        )
+    
     elif not cleaned_data[
         "FastingBS"
     ].isin([0, 1]).all():
-
+    
         errors.append(
             "FastingBS must be either 0 or 1."
         )
@@ -1236,7 +1298,24 @@ def validate_patient_input(patient_data):
             categorical_valid_values[feature]
         )
 
+        missing_mask = (
+            cleaned_data[feature].isna()
+            |
+            cleaned_data[feature]
+            .astype(str)
+            .str.strip()
+            .eq("")
+        )
+        
+        if missing_mask.any():
+        
+            errors.append(
+                f"{feature} cannot be empty."
+            )
+        
         invalid_mask = (
+            ~missing_mask
+            &
             ~cleaned_data[feature].isin(
                 valid_values
             )
@@ -1364,6 +1443,21 @@ def predict_patient(patient_data):
                 cleaned_data
             )[0]
         )
+        model_classes = list(
+            getattr(
+                model,
+                "classes_",
+                [0, 1]
+            )
+        )
+        
+        absence_index = (
+            model_classes.index(0)
+        )
+        
+        presence_index = (
+            model_classes.index(1)
+        )
 
         return {
             "success": True,
@@ -1373,10 +1467,15 @@ def predict_patient(patient_data):
                 prediction
             ],
             "probability_no_heart_disease": float(
-                probabilities[0]
+                probabilities[
+                    absence_index
+                ]
             ),
+            
             "probability_heart_disease": float(
-                probabilities[1]
+                probabilities[
+                    presence_index
+                ]
             )
         }
 
@@ -1611,26 +1710,20 @@ def load_batch_file(uploaded_file):
     try:
 
         filename = uploaded_file.name.lower()
-
-        if filename.endswith(".csv"):
-
-            data = pd.read_csv(
-                uploaded_file
-            )
-
-        elif filename.endswith(".xlsx"):
-
+        
+        if filename.endswith(".xlsx"):
+        
             data = pd.read_excel(
                 uploaded_file
             )
-
+        
         else:
-
+        
             return {
                 "success": False,
                 "errors": [
                     "Unsupported file format. "
-                    "Please upload a CSV or XLSX file."
+                    "Please upload an XLSX file."
                 ]
             }
 
@@ -1691,6 +1784,21 @@ def compare_models(patient_data):
                     cleaned_data
                 )[0]
             )
+            model_classes = list(
+                getattr(
+                    model,
+                    "classes_",
+                    [0, 1]
+                )
+            )
+            
+            absence_index = (
+                model_classes.index(0)
+            )
+            
+            presence_index = (
+                model_classes.index(1)
+            )
 
             comparison_records.append({
                 "Model": model_name,
@@ -1699,11 +1807,19 @@ def compare_models(patient_data):
                     prediction
                 ],
                 "Probability_No_Heart_Disease": round(
-                    float(probabilities[0]) * 100,
+                    float(
+                        probabilities[
+                            absence_index
+                        ]
+                    ) * 100,
                     2
                 ),
                 "Probability_Heart_Disease": round(
-                    float(probabilities[1]) * 100,
+                    float(
+                        probabilities[
+                            presence_index
+                        ]
+                    ) * 100,
                     2
                 )
             })
@@ -1866,6 +1982,133 @@ def style_prediction_label(predicted_class, predicted_label):
 # MODEL-SPECIFIC DETAILED ANALYSIS DIALOG
 # ============================================================
 
+@st.dialog(
+    "Delete Prediction Records",
+    width="small"
+)
+def show_delete_history_dialog(
+    prediction_ids
+):
+
+    prediction_ids = list(
+        prediction_ids
+    )
+
+    selected_count = len(
+        prediction_ids
+    )
+
+    if selected_count <= 0:
+        st.info(
+            "No prediction records are selected."
+        )
+        return
+
+    record_word = (
+        "record"
+        if selected_count == 1
+        else "records"
+    )
+
+    st.warning(
+        (
+            f"You are about to permanently delete "
+            f"**{selected_count} prediction {record_word}**."
+        )
+    )
+
+    st.write(
+        "This action cannot be undone."
+    )
+
+    # --------------------------------------------------------
+    # Optional selected-record preview
+    # --------------------------------------------------------
+
+    with st.expander(
+        "View selected Prediction IDs"
+    ):
+
+        for prediction_id in prediction_ids:
+
+            st.code(
+                prediction_id
+            )
+
+    cancel_col, delete_col = (
+        st.columns(
+            2,
+            gap="small"
+        )
+    )
+
+    with cancel_col:
+
+        if st.button(
+            "Cancel",
+            width="stretch",
+            key="cancel_history_deletion"
+        ):
+
+            st.rerun()
+
+    with delete_col:
+
+        if st.button(
+            (
+                f"Delete {selected_count} "
+                f"{'Record' if selected_count == 1 else 'Records'}"
+            ),
+            type="primary",
+            width="stretch",
+            icon=":material/delete:",
+            key="confirm_history_deletion"
+        ):
+
+            try:
+
+                deleted_count = (
+                    delete_predictions_from_history(
+                        prediction_ids
+                    )
+                )
+
+                # Clear selected records
+                st.session_state[
+                    "selected_history_prediction_ids"
+                ] = []
+
+                # Return to first page after deletion
+                st.session_state[
+                    "history_page"
+                ] = 1
+
+                # Save confirmation message for next rerun
+                st.session_state[
+                    "history_delete_message"
+                ] = (
+                    f"{deleted_count} prediction "
+                    f"{'record' if deleted_count == 1 else 'records'} "
+                    "deleted successfully."
+                )
+
+                st.rerun()
+
+            except Exception as error:
+
+                st.error(
+                    "The selected prediction records "
+                    "could not be deleted."
+                )
+
+                with st.expander(
+                    "Show deletion error"
+                ):
+
+                    st.code(
+                        str(error)
+                    )
+                    
 @st.dialog(
     "Model Detailed Analysis",
     width="large",
@@ -2872,7 +3115,69 @@ def get_random_forest_feature_importance():
 
     return aggregated_table
 
+def prepare_export_filename(
+    entered_name,
+    default_name,
+    extension=".xlsx"
+):
+    """
+    Prepare a safe export filename.
 
+    Users may enter a custom filename.
+    The required file extension is added automatically.
+    """
+
+    filename = str(
+        entered_name
+    ).strip()
+
+    # Use default when the field is empty
+    if not filename:
+        filename = default_name
+
+    # Remove extension if user already entered it
+    if filename.lower().endswith(
+        extension.lower()
+    ):
+        filename = filename[
+            :-len(extension)
+        ]
+
+    # Characters not allowed in Windows filenames
+    invalid_characters = [
+        "<",
+        ">",
+        ":",
+        '"',
+        "/",
+        "\\",
+        "|",
+        "?",
+        "*"
+    ]
+
+    for character in invalid_characters:
+        filename = filename.replace(
+            character,
+            "_"
+        )
+
+    # Remove unnecessary spaces and dots
+    filename = (
+        filename
+        .strip()
+        .strip(".")
+    )
+
+    # Fall back to default if nothing remains
+    if not filename:
+        filename = default_name
+
+    return (
+        filename
+        + extension
+    )
+    
 def build_prediction_excel(
     prediction_results
 ):
@@ -2890,6 +3195,49 @@ def build_prediction_excel(
         )
 
     return buffer.getvalue()
+
+def autofit_excel_columns(writer):
+    """
+    Automatically adjust column widths for every worksheet
+    in an Excel workbook.
+    """
+
+    for worksheet in writer.book.worksheets:
+
+        for column_cells in worksheet.columns:
+
+            column_letter = (
+                column_cells[0].column_letter
+            )
+
+            maximum_length = 0
+
+            for cell in column_cells:
+
+                if cell.value is not None:
+
+                    cell_length = len(
+                        str(cell.value)
+                    )
+
+                    maximum_length = max(
+                        maximum_length,
+                        cell_length
+                    )
+
+            # Add some spacing while preventing
+            # extremely wide columns.
+            adjusted_width = min(
+                max(
+                    maximum_length + 2,
+                    10
+                ),
+                40
+            )
+
+            worksheet.column_dimensions[
+                column_letter
+            ].width = adjusted_width
 
 def build_selected_prediction_excel(
     selected_record
@@ -3168,27 +3516,334 @@ def build_selected_prediction_excel(
         buffer,
         engine="openpyxl"
     ) as writer:
-
+    
         prediction_summary.to_excel(
             writer,
             sheet_name="Prediction Summary",
             index=False
         )
-
+    
         patient_input_report.to_excel(
             writer,
             sheet_name="Patient Input",
             index=False
         )
-
+    
         model_results_report.to_excel(
             writer,
             sheet_name="Model Results",
             index=False
         )
-
+    
+        autofit_excel_columns(
+            writer
+        )
+    
     return buffer.getvalue()
 
+def build_prediction_records_report_excel(
+    history_records
+):
+    """
+    Create a standard three-sheet Excel report
+    for multiple historical prediction records.
+    """
+
+    buffer = BytesIO()
+
+    prediction_summary_rows = []
+    patient_input_rows = []
+    model_results_rows = []
+
+    # --------------------------------------------------------
+    # Build report rows for every selected prediction
+    # --------------------------------------------------------
+
+    for _, record in history_records.iterrows():
+
+        # ----------------------------------------------------
+        # Case ID
+        # ----------------------------------------------------
+
+        case_id_value = record.get(
+            "case_id"
+        )
+
+        if (
+            pd.isna(case_id_value)
+            or str(case_id_value).strip() == ""
+        ):
+            case_id_value = "Not Provided"
+
+        prediction_id = record[
+            "prediction_id"
+        ]
+
+        # ====================================================
+        # SHEET 1: PREDICTION SUMMARY
+        # ====================================================
+
+        prediction_summary_rows.append(
+            {
+                "Prediction ID":
+                    prediction_id,
+
+                "Case ID":
+                    case_id_value,
+
+                "Prediction Date":
+                    record[
+                        "prediction_date"
+                    ],
+
+                "Prediction Time":
+                    record[
+                        "prediction_time"
+                    ],
+
+                "Final Model":
+                    record[
+                        "selected_model"
+                    ],
+
+                "Final Prediction":
+                    record[
+                        "final_prediction"
+                    ],
+
+                "Heart-Disease Probability (%)":
+                    round(
+                        float(
+                            record[
+                                "probability_heart_disease"
+                            ]
+                        ),
+                        2
+                    ),
+
+                "No-Heart-Disease Probability (%)":
+                    round(
+                        float(
+                            record[
+                                "probability_no_heart_disease"
+                            ]
+                        ),
+                        2
+                    ),
+
+                "Model Agreement":
+                    record[
+                        "model_agreement"
+                    ],
+
+                "Presence Votes":
+                    int(
+                        record[
+                            "presence_votes"
+                        ]
+                    ),
+
+                "Absence Votes":
+                    int(
+                        record[
+                            "absence_votes"
+                        ]
+                    )
+            }
+        )
+
+        # ====================================================
+        # SHEET 2: PATIENT INPUT
+        # ====================================================
+
+        patient_input_rows.append(
+            {
+                "Prediction ID":
+                    prediction_id,
+
+                "Case ID":
+                    case_id_value,
+
+                "Age":
+                    record[
+                        "age"
+                    ],
+
+                "Sex":
+                    record[
+                        "sex"
+                    ],
+
+                "Chest Pain Type":
+                    record[
+                        "chest_pain_type"
+                    ],
+
+                "Resting BP":
+                    record[
+                        "resting_bp"
+                    ],
+
+                "Cholesterol":
+                    record[
+                        "cholesterol"
+                    ],
+
+                "Fasting BS":
+                    record[
+                        "fasting_bs"
+                    ],
+
+                "Resting ECG":
+                    record[
+                        "resting_ecg"
+                    ],
+
+                "Max HR":
+                    record[
+                        "max_hr"
+                    ],
+
+                "Exercise Angina":
+                    record[
+                        "exercise_angina"
+                    ],
+
+                "Oldpeak":
+                    record[
+                        "oldpeak"
+                    ],
+
+                "ST Slope":
+                    record[
+                        "st_slope"
+                    ]
+            }
+        )
+
+        # ====================================================
+        # SHEET 3: FOUR-MODEL RESULTS
+        # ====================================================
+        
+        model_results_rows.append(
+            {
+                "Prediction ID":
+                    prediction_id,
+        
+                "Case ID":
+                    case_id_value,
+        
+                "ANN Result":
+                    record[
+                        "ann_prediction"
+                    ],
+        
+                "ANN Presence Probability (%)":
+                    round(
+                        float(
+                            record[
+                                "ann_probability_yes"
+                            ]
+                        ),
+                        2
+                    ),
+        
+                "SVM Result":
+                    record[
+                        "svm_prediction"
+                    ],
+        
+                "SVM Presence Probability (%)":
+                    round(
+                        float(
+                            record[
+                                "svm_probability_yes"
+                            ]
+                        ),
+                        2
+                    ),
+        
+                "Random Forest Result":
+                    record[
+                        "random_forest_prediction"
+                    ],
+        
+                "Random Forest Presence Probability (%)":
+                    round(
+                        float(
+                            record[
+                                "random_forest_probability_yes"
+                            ]
+                        ),
+                        2
+                    ),
+        
+                "XGBoost Result":
+                    record[
+                        "xgboost_prediction"
+                    ],
+        
+                "XGBoost Presence Probability (%)":
+                    round(
+                        float(
+                            record[
+                                "xgboost_probability_yes"
+                            ]
+                        ),
+                        2
+                    )
+            }
+        )
+
+    # --------------------------------------------------------
+    # Convert to tables
+    # --------------------------------------------------------
+
+    prediction_summary = pd.DataFrame(
+        prediction_summary_rows
+    )
+
+    patient_input_report = pd.DataFrame(
+        patient_input_rows
+    )
+
+    model_results_report = pd.DataFrame(
+        model_results_rows
+    )
+
+    # --------------------------------------------------------
+    # Write Excel workbook
+    # --------------------------------------------------------
+
+    with pd.ExcelWriter(
+        buffer,
+        engine="openpyxl"
+    ) as writer:
+    
+        prediction_summary.to_excel(
+            writer,
+            sheet_name="Prediction Summary",
+            index=False
+        )
+    
+        patient_input_report.to_excel(
+            writer,
+            sheet_name="Patient Input",
+            index=False
+        )
+    
+        model_results_report.to_excel(
+            writer,
+            sheet_name="Model Results",
+            index=False
+        )
+    
+        autofit_excel_columns(
+            writer
+        )
+    
+    return buffer.getvalue()
+    
 def build_history_records_excel(
     history_records
 ):
@@ -3393,7 +4048,7 @@ st.caption(
 ) = (
     st.tabs(
         [
-            "Single-Patient Prediction",
+            "Single Prediction",
             "Batch Prediction",
             "Prediction History & Reports",
             "Model Performance",
@@ -3408,18 +4063,13 @@ st.caption(
 
 with single_patient_tab:
 
-    st.subheader("Single-Patient Prediction")
+    st.subheader("Single Prediction")
 
     st.write(
         "Complete all fields and select "
         "**Generate Prediction with All Models**."
     )
 
-    st.caption(
-        "Input limits represent values supported by the training "
-        "dataset. They are not clinical definitions of normal or "
-        "abnormal measurements."
-    )
 
     display_input_field_glossary()
 
@@ -3692,8 +4342,9 @@ with single_patient_tab:
                     "current_prediction_id",
                     None
                 )
+                
                 st.session_state.pop(
-                    "current_prediction_id",
+                    "current_case_id",
                     None
                 )
 
@@ -4035,7 +4686,7 @@ with single_patient_tab:
                         show_model_detail_dialog(
                             model_name
                         )
-
+        st.divider()
         # ====================================================
         # DOWNLOAD CURRENT PREDICTION
         # ====================================================
@@ -4090,26 +4741,107 @@ with single_patient_tab:
                     )
                 )
 
-                current_prediction_filename = (
-                    "heart_disease_prediction_"
-                    f"{current_prediction_id}.xlsx"
+                # ------------------------------------------------
+                # Custom export filename
+                # ------------------------------------------------
+                
+                if (
+                    current_case_id is not None
+                    and str(current_case_id).strip()
+                ):
+                
+                    default_current_filename = (
+                        f"{current_case_id}_Prediction_Report"
+                    )
+                
+                else:
+                
+                    default_current_filename = (
+                        f"{current_prediction_id}_Prediction_Report"
+                    )
+                
+                
+                # ------------------------------------------------
+                # Custom report filename
+                # ------------------------------------------------
+                
+                current_prediction_signature = str(
+                    current_prediction_id
                 )
+                
+                previous_current_prediction_signature = (
+                    st.session_state.get(
+                        "current_prediction_filename_signature"
+                    )
+                )
+                
+                if (
+                    previous_current_prediction_signature
+                    != current_prediction_signature
+                ):
+                
+                    st.session_state[
+                        "confirmed_current_prediction_filename"
+                    ] = default_current_filename
+                
+                    st.session_state[
+                        "current_prediction_filename_input"
+                    ] = default_current_filename
+                
+                    st.session_state[
+                        "current_prediction_filename_signature"
+                    ] = current_prediction_signature
+                
+                
+                current_filename_input = st.text_input(
+                    "Report File Name",
+                    key="current_prediction_filename_input",
+                    help=(
+                        "You may rename the report before downloading. "
+                        "The .xlsx extension will be added automatically."
+                    )
+                )
+                
+                
+                if st.button(
+                    "Apply File Name",
+                    width="stretch",
+                    key="apply_current_prediction_filename"
+                ):
+                
+                    st.session_state[
+                        "confirmed_current_prediction_filename"
+                    ] = current_filename_input
+                
+                    st.success(
+                        "File name applied."
+                    )
+                
+                
+                current_prediction_filename = (
+                    prepare_export_filename(
+                        entered_name=st.session_state[
+                            "confirmed_current_prediction_filename"
+                        ],
+                        default_name=default_current_filename,
+                        extension=".xlsx"
+                    )
+                )
+                
 
                 st.download_button(
-                    label=(
-                        "Download Current Prediction as Excel"
-                    ),
+                    label="Download Current Prediction as Excel",
                     data=current_prediction_excel,
-                    file_name=(
-                        current_prediction_filename
-                    ),
+                    file_name=current_prediction_filename,
                     mime=(
                         "application/vnd.openxmlformats-officedocument."
                         "spreadsheetml.sheet"
                     ),
+                    type="primary",
                     width="stretch",
                     key="download_current_prediction"
                 )
+                st.divider()
         
         # ============================================================
         # OPTIONAL DETAILS
@@ -4143,18 +4875,14 @@ with single_patient_tab:
 
 with batch_prediction_tab:
 
-    st.subheader("CSV or Excel Batch Prediction")
+    st.subheader("Excel Batch Prediction")
 
     st.write(
         "Upload multiple patient records and generate predictions "
         "for all records in one operation."
     )
 
-    st.info(
-        "Every valid patient record is evaluated using all models "
-        "available in the current model bundle. "
-        f"**{preferred_model_name}** remains the selected final model."
-    )
+
 
     step_col1, step_col2, step_col3 = st.columns(3)
 
@@ -4162,7 +4890,7 @@ with batch_prediction_tab:
         with st.container(border=True):
             st.markdown("#### 1. Download")
             st.caption(
-                "Download the CSV or Excel template containing "
+                "Download the Excel template containing "
                 "the required input columns."
             )
 
@@ -4186,42 +4914,26 @@ with batch_prediction_tab:
         columns=required_features
     )
 
-    template_csv = (
-        template
-        .to_csv(index=False)
-        .encode("utf-8")
+
+    st.download_button(
+        label="Download Excel Template",
+        data=build_excel_template(),
+        file_name="heart_disease_batch_template.xlsx",
+        mime=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+        type="primary",
+        width="stretch"
     )
-
-    template_col1, template_col2 = st.columns(2)
-
-    with template_col1:
-        st.download_button(
-            label="Download CSV Template",
-            data=template_csv,
-            file_name="heart_disease_batch_template.csv",
-            mime="text/csv",
-            width="stretch"
-        )
-
-    with template_col2:
-        st.download_button(
-            label="Download Excel Template",
-            data=build_excel_template(),
-            file_name="heart_disease_batch_template.xlsx",
-            mime=(
-                "application/vnd.openxmlformats-officedocument."
-                "spreadsheetml.sheet"
-            ),
-            width="stretch"
-        )
 
     st.divider()
 
     uploaded_file = st.file_uploader(
-        "Upload completed CSV or Excel file",
-        type=["csv", "xlsx"],
+        "Upload completed Excel file",
+        type=["xlsx"],
         help=(
-            "Supported formats: CSV and XLSX. The file must contain "
+            "Supported format: XLSX. The file must contain "
             "exactly the required input columns."
         )
     )
@@ -4544,55 +5256,290 @@ with batch_prediction_tab:
             "### Download Prediction Results"
         )
 
-        csv_result = (
-            batch_output
-            .to_csv(index=False)
-            .encode("utf-8")
+        # ------------------------------------------------
+        # Custom batch export filename
+        # ------------------------------------------------
+        
+        malaysia_time = datetime.now(
+            ZoneInfo(
+                "Asia/Kuala_Lumpur"
+            )
+        )
+        
+        default_batch_filename = (
+            "Batch_Prediction_Results_"
+            + malaysia_time.strftime(
+                "%d%b%Y"
+            )
+        )
+        
+        
+        if "confirmed_batch_export_filename" not in st.session_state:
+        
+            st.session_state[
+                "confirmed_batch_export_filename"
+            ] = default_batch_filename
+        
+        
+        batch_filename_input = st.text_input(
+            "Report File Name",
+            value=default_batch_filename,
+            key="batch_filename_input",
+            help=(
+                "You may rename the prediction results before downloading. "
+                "The .xlsx extension will be added automatically."
+            )
+        )
+        
+        
+        if st.button(
+            "Apply File Name",
+            width="stretch",
+            key="apply_batch_filename"
+        ):
+        
+            st.session_state[
+                "confirmed_batch_export_filename"
+            ] = batch_filename_input
+        
+            st.success(
+                "File name applied."
+            )
+        
+        
+
+        
+        
+        batch_excel_filename = (
+            prepare_export_filename(
+                entered_name=st.session_state[
+                    "confirmed_batch_export_filename"
+                ],
+                default_name=default_batch_filename,
+                extension=".xlsx"
+            )
         )
 
-        csv_col, excel_col = st.columns(2)
-
-        with csv_col:
-            st.download_button(
-                label="Download Four-Model Results as CSV",
-                data=csv_result,
-                file_name=(
-                    "heart_disease_four_model_"
-                    "batch_prediction_output.csv"
-                ),
-                mime="text/csv",
-                width="stretch"
+        # ------------------------------------------------
+        # Build standard three-sheet batch report
+        # ------------------------------------------------
+        
+        saved_batch_ids = st.session_state.get(
+            "batch_saved_prediction_ids",
+            []
+        )
+        
+        if saved_batch_ids:
+        
+            batch_history_data = (
+                load_prediction_history()
             )
-
-        with excel_col:
-            st.download_button(
-                label="Download Four-Model Results as Excel",
-                data=build_prediction_excel(
+        
+            batch_report_records = (
+                batch_history_data[
+                    batch_history_data[
+                        "prediction_id"
+                    ].isin(
+                        saved_batch_ids
+                    )
+                ]
+                .copy()
+            )
+        
+            # Preserve the original batch order
+            batch_id_order = {
+                prediction_id: index
+                for index, prediction_id
+                in enumerate(saved_batch_ids)
+            }
+        
+            batch_report_records[
+                "_batch_order"
+            ] = (
+                batch_report_records[
+                    "prediction_id"
+                ].map(
+                    batch_id_order
+                )
+            )
+        
+            batch_report_records = (
+                batch_report_records
+                .sort_values(
+                    "_batch_order"
+                )
+                .drop(
+                    columns=[
+                        "_batch_order"
+                    ]
+                )
+                .reset_index(
+                    drop=True
+                )
+            )
+        
+            batch_prediction_excel = (
+                build_prediction_records_report_excel(
+                    batch_report_records
+                )
+            )
+        
+        else:
+        
+            batch_prediction_excel = (
+                build_prediction_excel(
                     batch_output
-                ),
-                file_name=(
-                    "heart_disease_four_model_"
-                    "batch_prediction_output.xlsx"
-                ),
-                mime=(
-                    "application/vnd.openxmlformats-officedocument."
-                    "spreadsheetml.sheet"
-                ),
-                width="stretch"
+                )
             )
+        st.download_button(
+            label="Download Batch Prediction Results as Excel",
+            data=batch_prediction_excel,
+            file_name=batch_excel_filename,
+            mime=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+            width="stretch"
+        )
 
 
 # ============================================================
 # PREDICTION HISTORY & REPORTS TAB
 # ============================================================
+# ============================================================
+# HISTORY FILTER ACTIONS
+# ============================================================
 
+if "history_applied_search" not in st.session_state:
+    st.session_state[
+        "history_applied_search"
+    ] = ""
+
+if "history_page" not in st.session_state:
+    st.session_state[
+        "history_page"
+    ] = 1
+
+if "selected_history_prediction_ids" not in st.session_state:
+    st.session_state[
+        "selected_history_prediction_ids"
+    ] = []
+def apply_history_search():
+
+    st.session_state[
+        "history_applied_search"
+    ] = (
+        st.session_state.get(
+            "history_search",
+            ""
+        ).strip()
+    )
+
+    st.session_state[
+        "history_page"
+    ] = 1
+
+    st.session_state[
+        "selected_history_prediction_ids"
+    ] = []
+
+def reset_history_filters():
+
+    st.session_state[
+        "history_year_filter"
+    ] = "All Years"
+
+    st.session_state[
+        "history_month_filter"
+    ] = "All Months"
+
+    st.session_state[
+        "history_search"
+    ] = ""
+
+    st.session_state[
+        "history_applied_search"
+    ] = ""
+
+    st.session_state[
+        "history_sort"
+    ] = "Newest First"
+
+    st.session_state[
+        "history_page"
+    ] = 1
+
+    st.session_state[
+        "selected_history_prediction_ids"
+    ] = []
+
+def reset_history_page():
+    """
+    Return prediction history to page 1.
+    """
+
+    st.session_state[
+        "history_page"
+    ] = 1
+
+
+def reset_history_page_and_selection():
+    """
+    Return to page 1 and clear selected records.
+    """
+
+    st.session_state[
+        "history_page"
+    ] = 1
+
+    st.session_state[
+        "selected_history_prediction_ids"
+    ] = []
+
+
+def change_history_page(
+    change,
+    total_pages
+):
+    """
+    Move forward or backward through prediction history.
+    """
+
+    current_page = st.session_state.get(
+        "history_page",
+        1
+    )
+
+    new_page = (
+        current_page
+        + change
+    )
+
+    st.session_state[
+        "history_page"
+    ] = min(
+        max(
+            new_page,
+            1
+        ),
+        total_pages
+    )
 with history_tab:
 
     st.subheader(
         "Prediction History & Reports"
     )
 
-
+    if (
+        "history_delete_message"
+        in st.session_state
+    ):
+    
+        st.success(
+            st.session_state.pop(
+                "history_delete_message"
+            )
+        )
     st.caption(
         "Select one or more prediction records to download. "
         "The table reflects the currently applied filters."
@@ -4706,19 +5653,21 @@ with history_tab:
             "prediction_datetime"
         ].dt.month_name()
 
-                # ====================================================
+        # ====================================================
         # HISTORY FILTERS
         # ====================================================
-
-
-        filter_col1, filter_col2 = (
-            st.columns(2)
+        
+        filter_col1, filter_col2, filter_col3 = (
+            st.columns(
+                3,
+                gap="small"
+            )
         )
-
+        
         # ----------------------------------------------------
         # Year
         # ----------------------------------------------------
-
+        
         available_years = sorted(
             history_display[
                 "Year"
@@ -4729,21 +5678,22 @@ with history_tab:
             .tolist(),
             reverse=True
         )
-
+        
         with filter_col1:
-
+        
             selected_year = st.selectbox(
                 "Year",
                 options=[
                     "All Years"
                 ] + available_years,
-                key="history_year_filter"
+                key="history_year_filter",
+                on_change=reset_history_page_and_selection
             )
-
+        
         # ----------------------------------------------------
         # Month
         # ----------------------------------------------------
-
+        
         month_order = [
             "January",
             "February",
@@ -4768,24 +5718,40 @@ with history_tab:
                 options=[
                     "All Months"
                 ] + available_months,
-                key="history_month_filter"
+                key="history_month_filter",
+                on_change=reset_history_page_and_selection
             )
-
-
-
-
-        search_col, sort_col = (
+        
+        # ----------------------------------------------------
+        # Sort
+        # ----------------------------------------------------
+        
+        with filter_col3:
+        
+            history_sort = st.selectbox(
+                "Sort By",
+                options=[
+                    "Newest First",
+                    "Oldest First"
+                ],
+                key="history_sort",
+                on_change=reset_history_page
+            )
+        
+        
+        # ====================================================
+        # SEARCH
+        # ====================================================
+        
+        search_col, search_button_col, reset_button_col = (
             st.columns(
-                [2, 1]
+                [5, 1.15, 1.45],
+                gap="small",
+                vertical_alignment="bottom"
             )
-        )
-
-        # ----------------------------------------------------
-        # Search
-        # ----------------------------------------------------
-
+        )      
         with search_col:
-
+        
             history_search = st.text_input(
                 "Search Case ID or Prediction ID",
                 placeholder=(
@@ -4793,22 +5759,27 @@ with history_tab:
                 ),
                 key="history_search"
             )
-
-        # ----------------------------------------------------
-        # Sort
-        # ----------------------------------------------------
-
-        with sort_col:
-
-            history_sort = st.selectbox(
-                "Sort By",
-                options=[
-                    "Newest First",
-                    "Oldest First"
-                ],
-                key="history_sort"
+        
+        with search_button_col:
+        
+            st.button(
+                "Search",
+                type="primary",
+                width="stretch",
+                key="history_search_button",
+                on_click=apply_history_search,
+                icon=":material/search:"
             )
-
+        
+        with reset_button_col:
+        
+            st.button(
+                "Reset Filters",
+                width="stretch",
+                key="history_reset_button",
+                on_click=reset_history_filters,
+                icon=":material/restart_alt:"
+            )
                     # ====================================================
         # APPLY FILTERS
         # ====================================================
@@ -4844,18 +5815,21 @@ with history_tab:
 
 
 
-
-
-
         # ----------------------------------------------------
         # Search Case ID / Prediction ID
         # ----------------------------------------------------
-
-        if history_search.strip():
-
+        
+        applied_history_search = (
+            st.session_state.get(
+                "history_applied_search",
+                ""
+            ).strip()
+        )
+        
+        if applied_history_search:
+        
             search_text = (
-                history_search
-                .strip()
+                applied_history_search
                 .lower()
             )
 
@@ -4920,11 +5894,101 @@ with history_tab:
                 drop=True
             )
         )
-
-        st.caption(
-            f"Showing {len(filtered_history)} "
-            f"of {len(history_display)} saved predictions."
+        
+        
+        # ====================================================
+        # PAGINATION
+        # ====================================================
+        
+        RECORDS_PER_PAGE = 100
+        
+        total_filtered_records = len(
+            filtered_history
         )
+        
+        total_pages = max(
+            1,
+            (
+                total_filtered_records
+                + RECORDS_PER_PAGE
+                - 1
+            )
+            // RECORDS_PER_PAGE
+        )
+        
+        
+        # Keep current page within valid range
+        if (
+            st.session_state[
+                "history_page"
+            ] > total_pages
+        ):
+        
+            st.session_state[
+                "history_page"
+            ] = total_pages
+        
+        
+        current_page = st.session_state[
+            "history_page"
+        ]
+        
+        
+        page_start = (
+            current_page - 1
+        ) * RECORDS_PER_PAGE
+        
+        page_end = min(
+            page_start
+            + RECORDS_PER_PAGE,
+            total_filtered_records
+        )
+        
+        
+        page_history = (
+            filtered_history
+            .iloc[
+                page_start:
+                page_end
+            ]
+            .copy()
+            .reset_index(
+                drop=True
+            )
+        )
+        
+        
+        # ----------------------------------------------------
+        # Result count
+        # ----------------------------------------------------
+        
+        if total_filtered_records > 0:
+        
+            if (
+                total_filtered_records
+                == len(history_display)
+            ):
+        
+                st.caption(
+                    f"Showing {page_start + 1}–{page_end} "
+                    f"of {total_filtered_records} saved predictions."
+                )
+        
+            else:
+        
+                st.caption(
+                    f"Showing {page_start + 1}–{page_end} "
+                    f"of {total_filtered_records} filtered predictions "
+                    f"({len(history_display)} total saved)."
+                )
+        
+        else:
+        
+            st.caption(
+                f"Showing 0 of "
+                f"{len(history_display)} saved predictions."
+            )
+        
         
         st.divider()
         
@@ -4933,44 +5997,101 @@ with history_tab:
         # ====================================================
                 
         all_history_excel = (
-            build_history_records_excel(
+            build_prediction_records_report_excel(
                 history_data
             )
         )
-        
-        records_title_col, records_download_col = (
-            st.columns(
-                [30, 1]
-            )
+
+        st.markdown(
+            "### Prediction Records"
         )
         
-        with records_title_col:
+        st.caption(
+            "Select one or more prediction records below "
+            "to enable the Excel download."
+        )
         
-            st.markdown(
-                "### Prediction Records"
-            )
-            st.caption(
-                "Select one or more prediction records below "
-                "to enable the Excel download."
-            )
-        with records_download_col:
         
+        # ====================================================
+        # DOWNLOAD ALL PREDICTION RECORDS
+        # ====================================================
+        
+        with st.expander(
+            "Download All Prediction Records"
+        ):
+        
+            malaysia_time = datetime.now(
+                ZoneInfo(
+                    "Asia/Kuala_Lumpur"
+                )
+            )
+        
+            default_all_history_filename = (
+                "All_Prediction_Records_"
+                + malaysia_time.strftime(
+                    "%d%b%Y"
+                )
+            )
+        
+            # ------------------------------------------------
+            # Custom report filename
+            # ------------------------------------------------
+            
+            if "confirmed_all_history_filename" not in st.session_state:
+                st.session_state[
+                    "confirmed_all_history_filename"
+                ] = default_all_history_filename
+            
+            
+            all_history_filename_input = st.text_input(
+                "Report File Name",
+                value=default_all_history_filename,
+                key="all_history_filename_input",
+                help=(
+                    "You may rename the report before downloading. "
+                    "The .xlsx extension will be added automatically."
+                )
+            )
+            
+            
+            if st.button(
+                "Apply File Name",
+                width="stretch",
+                key="apply_all_history_filename"
+            ):
+            
+                st.session_state[
+                    "confirmed_all_history_filename"
+                ] = all_history_filename_input
+            
+                st.success(
+                    "File name applied."
+                )
+            
+            
+            all_history_export_filename = (
+                prepare_export_filename(
+                    entered_name=st.session_state[
+                        "confirmed_all_history_filename"
+                    ],
+                    default_name=default_all_history_filename,
+                    extension=".xlsx"
+                )
+            )
+            
+            
             st.download_button(
-                label="",
+                label="Download All Prediction Records as Excel",
                 data=all_history_excel,
-                file_name=(
-                    "heart_disease_all_prediction_records.xlsx"
-                ),
+                file_name=all_history_export_filename,
                 mime=(
                     "application/vnd.openxmlformats-officedocument."
                     "spreadsheetml.sheet"
                 ),
-                icon=":material/download:",
-                help=(
-                    "Download all prediction records as Excel"
-                ),
+                width="stretch",
                 key="download_all_prediction_records"
             )
+        
         
 
         if filtered_history.empty:
@@ -4985,39 +6106,52 @@ with history_tab:
             # Build compact selectable table
             # ------------------------------------------------
 
+            selected_history_ids = set(
+                st.session_state.get(
+                    "selected_history_prediction_ids",
+                    []
+                )
+            )
+            
             compact_history = pd.DataFrame(
                 {
                     "Select": [
-                        False
-                    ] * len(filtered_history),
-
+                        prediction_id
+                        in selected_history_ids
+            
+                        for prediction_id
+                        in page_history[
+                            "prediction_id"
+                        ].astype(str)
+                    ],
+            
                     "Prediction ID":
-                        filtered_history[
+                        page_history[
                             "prediction_id"
                         ].values,
-
+            
                     "Case ID":
-                        filtered_history[
+                        page_history[
                             "Case ID"
                         ].values,
-
+            
                     "Date":
-                        filtered_history[
+                        page_history[
                             "Date"
                         ].values,
-
+            
                     "Time":
-                        filtered_history[
+                        page_history[
                             "Time"
                         ].values,
-
+            
                     "Prediction Result":
-                        filtered_history[
+                        page_history[
                             "Prediction Result"
                         ].values,
-
+            
                     "ANN Result":
-                        filtered_history[
+                        page_history[
                             "ann_predicted_class"
                         ].map(
                             {
@@ -5025,9 +6159,9 @@ with history_tab:
                                 1: "Present"
                             }
                         ).values,
-
+            
                     "SVM Result":
-                        filtered_history[
+                        page_history[
                             "svm_predicted_class"
                         ].map(
                             {
@@ -5035,9 +6169,9 @@ with history_tab:
                                 1: "Present"
                             }
                         ).values,
-
+            
                     "Random Forest Result":
-                        filtered_history[
+                        page_history[
                             "random_forest_predicted_class"
                         ].map(
                             {
@@ -5045,9 +6179,9 @@ with history_tab:
                                 1: "Present"
                             }
                         ).values,
-
+            
                     "XGBoost Result":
-                        filtered_history[
+                        page_history[
                             "xgboost_predicted_class"
                         ].map(
                             {
@@ -5057,12 +6191,33 @@ with history_tab:
                         ).values
                 }
             )
+            page_signature = "|".join(
+                page_history[
+                    "prediction_id"
+                ]
+                .astype(str)
+                .tolist()
+            )
+            
+            editor_signature = (
+                uuid.uuid5(
+                    uuid.NAMESPACE_DNS,
+                    page_signature
+                )
+                .hex[
+                    :8
+                ]
+            )
 
             edited_history = st.data_editor(
                 compact_history,
                 hide_index=True,
                 width="stretch",
-                key="prediction_history_selector",
+                key=(
+                    f"prediction_history_selector_"
+                    f"{current_page}_"
+                    f"{editor_signature}"
+                ),
                 disabled=[
                     "Prediction ID",
                     "Case ID",
@@ -5086,39 +6241,172 @@ with history_tab:
                         )
                 }
             )
-            selected_indices = (
-                edited_history.index[
+            # ====================================================
+            # PRESERVE SELECTION ACROSS PAGES
+            # ====================================================
+            
+            current_page_ids = set(
+                page_history[
+                    "prediction_id"
+                ]
+                .astype(str)
+                .tolist()
+            )
+            
+            selected_on_current_page = set(
+                edited_history.loc[
                     edited_history[
                         "Select"
-                    ] == True
-                ].tolist()
+                    ] == True,
+                    "Prediction ID"
+                ]
+                .astype(str)
+                .tolist()
             )
-
-            if len(selected_indices) > 0:
-
-                # --------------------------------------------
-                # Get all selected prediction records
-                # --------------------------------------------
-
-                selected_records = (
-                    filtered_history.iloc[
-                        selected_indices
-                    ].copy()
+            
+            stored_selected_ids = set(
+                st.session_state.get(
+                    "selected_history_prediction_ids",
+                    []
                 )
+            )
+            
+            
+            # Remove old selections belonging to this page
+            stored_selected_ids.difference_update(
+                current_page_ids
+            )
+            
+            # Add the currently checked selections
+            stored_selected_ids.update(
+                selected_on_current_page
+            )
+            
+            st.session_state[
+                "selected_history_prediction_ids"
+            ] = list(
+                stored_selected_ids
+            )
+            
+            
+            selected_records = (
+                filtered_history[
+                    filtered_history[
+                        "prediction_id"
+                    ]
+                    .astype(str)
+                    .isin(
+                        stored_selected_ids
+                    )
+                ]
+                .copy()
+            )
+            
+            selected_count = len(
+                selected_records
+            )
+            
+            
+            # ====================================================
+            # PAGINATION CONTROLS
+            # ====================================================
+            
+            if total_pages > 1:
+            
+                previous_col, page_col, next_col = (
+                    st.columns(
+                        [1, 2, 1],
+                        vertical_alignment="center"
+                    )
+                )
+            
+                with previous_col:
+            
+                    st.button(
+                        "Previous",
+                        icon=":material/chevron_left:",
+                        width="stretch",
+                        disabled=(
+                            current_page <= 1
+                        ),
+                        key="history_previous_page",
+                        on_click=change_history_page,
+                        args=(
+                            -1,
+                            total_pages
+                        )
+                    )
+            
+                with page_col:
+                
+                    st.markdown(
+                        (
+                            "<div style='"
+                            "text-align:center;"
+                            "font-weight:600;"
+                            "font-size:0.85rem;"
+                            "transform:translateY(-6px);"
+                            "'>"
+                            f"{page_start + 1}–{page_end} "
+                            f"of {total_filtered_records} records"
+                            "</div>"
+                        ),
+                        unsafe_allow_html=True
+                    )
+                                            
+                with next_col:
+            
+                    st.button(
+                        "Next",
+                        icon=":material/chevron_right:",
+                        width="stretch",
+                        disabled=(
+                            current_page >= total_pages
+                        ),
+                        key="history_next_page",
+                        on_click=change_history_page,
+                        args=(
+                            1,
+                            total_pages
+                        )
+                    )
+            
+            
+            # ====================================================
+            # SELECTED RECORD EXPORT
+            # ====================================================
+            
+            if selected_count > 0:
+
+
 
                 # --------------------------------------------
                 # Build Excel containing selected records
                 # --------------------------------------------
 
-                selected_records_excel = (
-                    build_history_records_excel(
-                        selected_records
-                    )
-                )
-
                 selected_count = len(
                     selected_records
                 )
+                
+                # --------------------------------------------
+                # Build Excel report
+                # --------------------------------------------
+                
+                if selected_count == 1:
+                
+                    selected_records_excel = (
+                        build_selected_prediction_excel(
+                            selected_records.iloc[0]
+                        )
+                    )
+                
+                else:
+                
+                    selected_records_excel = (
+                        build_prediction_records_report_excel(
+                            selected_records
+                        )
+                    )
 
                 st.caption(
                     f"{selected_count} prediction "
@@ -5126,25 +6414,185 @@ with history_tab:
                     "selected."
                 )
 
-                st.download_button(
-                    label=(
-                        "Download Selected Prediction "
-                        "Records as Excel"
-                    ),
-                    data=selected_records_excel,
-                    file_name=(
-                        "heart_disease_selected_"
-                        "prediction_records.xlsx"
-                    ),
-                    mime=(
-                        "application/vnd.openxmlformats-officedocument."
-                        "spreadsheetml.sheet"
-                    ),
-                    width="stretch",
-                    key=(
-                        "download_selected_prediction_records"
+                st.divider()
+                # --------------------------------------------
+                # Default selected-record export filename
+                # --------------------------------------------
+                
+                if selected_count == 1:
+                
+                    selected_case_id = (
+                        selected_records.iloc[0][
+                            "case_id"
+                        ]
+                    )
+                
+                    if (
+                        pd.notna(selected_case_id)
+                        and str(selected_case_id).strip()
+                    ):
+                
+                        default_selected_filename = (
+                            f"{selected_case_id}_Prediction_Report"
+                        )
+                
+                    else:
+                
+                        selected_prediction_id = (
+                            selected_records.iloc[0][
+                                "prediction_id"
+                            ]
+                        )
+                
+                        default_selected_filename = (
+                            f"{selected_prediction_id}_Prediction_Report"
+                        )
+                
+                else:
+                
+                    malaysia_time = datetime.now(
+                        ZoneInfo(
+                            "Asia/Kuala_Lumpur"
+                        )
+                    )
+                
+                    default_selected_filename = (
+                        "Selected_Prediction_Records_"
+                        + malaysia_time.strftime(
+                            "%d%b%Y"
+                        )
+                    )
+                
+                
+                # --------------------------------------------
+                # Update filename when record selection changes
+                # --------------------------------------------
+                
+                selection_signature = "|".join(
+                    selected_records[
+                        "prediction_id"
+                    ]
+                    .astype(str)
+                    .tolist()
+                )
+                
+                previous_selection_signature = (
+                    st.session_state.get(
+                        "selected_history_selection_signature"
                     )
                 )
+                
+                # ------------------------------------------------
+                # Reset filename when record selection changes
+                # ------------------------------------------------
+                
+                if (
+                    previous_selection_signature
+                    != selection_signature
+                ):
+                
+                    st.session_state[
+                        "selected_history_filename_input"
+                    ] = default_selected_filename
+                
+                    st.session_state[
+                        "confirmed_selected_history_filename"
+                    ] = default_selected_filename
+                
+                    st.session_state[
+                        "selected_history_selection_signature"
+                    ] = selection_signature
+                
+                
+                # ------------------------------------------------
+                # Custom report filename
+                # ------------------------------------------------
+                
+                selected_filename_input = st.text_input(
+                    "Report File Name",
+                    key="selected_history_filename_input",
+                    help=(
+                        "You may rename the report before downloading. "
+                        "The .xlsx extension will be added automatically."
+                    )
+                )
+                
+                
+                if st.button(
+                    "Apply File Name",
+                    width="stretch",
+                    key="apply_selected_history_filename"
+                ):
+                
+                    st.session_state[
+                        "confirmed_selected_history_filename"
+                    ] = selected_filename_input
+                
+                    st.success(
+                        "File name applied."
+                    )
+                
+                
+                selected_export_filename = (
+                    prepare_export_filename(
+                        entered_name=st.session_state[
+                            "confirmed_selected_history_filename"
+                        ],
+                        default_name=default_selected_filename,
+                        extension=".xlsx"
+                    )
+                )
+
+                download_selected_col, delete_selected_col = (
+                    st.columns(
+                        [2, 1],
+                        gap="small"
+                    )
+                )
+                
+                with download_selected_col:
+                
+                    st.download_button(
+                        label=(
+                            "Download Selected Prediction "
+                            + (
+                                "Record as Excel"
+                                if selected_count == 1
+                                else "Records as Excel"
+                            )
+                        ),
+                        data=selected_records_excel,
+                        file_name=selected_export_filename,
+                        mime=(
+                            "application/vnd.openxmlformats-officedocument."
+                            "spreadsheetml.sheet"
+                        ),
+                        width="stretch",
+                        key="download_selected_prediction_records"
+                    )
+                
+                with delete_selected_col:
+                
+                    if st.button(
+                        (
+                            "Delete Selected "
+                            + (
+                                "Record"
+                                if selected_count == 1
+                                else "Records"
+                            )
+                        ),
+                        type="primary",
+                        icon=":material/delete:",
+                        width="stretch",
+                        key="delete_selected_prediction_records"
+                    ):
+                
+                        show_delete_history_dialog(
+                            st.session_state[
+                                "selected_history_prediction_ids"
+                            ]
+                        )
             st.divider()
 
 
@@ -5968,7 +7416,7 @@ with about_system_tab:
         ),
         (
             "Batch Prediction",
-            "Processes multiple patient records from CSV or Excel "
+            "Processes multiple patient records from Excel "
             "and returns predictions from all four models."
         ),
         (
@@ -5988,8 +7436,8 @@ with about_system_tab:
         ),
         (
             "History Search and Filtering",
-            "Allows saved records to be filtered by year, month and "
-            "prediction result or searched using Case ID or Prediction ID."
+            "Allows saved records to be filtered by year and month or "
+            "searched using Case ID or Prediction ID."
         ),
         (
             "Excel Reporting",

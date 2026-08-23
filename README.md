@@ -23,7 +23,7 @@ The prototype provides the following functions:
 - Automatic Case ID and Prediction ID generation
 - Four-model prediction comparison
 - Heart-disease presence probability display
-- Batch prediction using CSV or Excel files
+- Batch prediction using Excel (.xlsx) files
 - Batch input validation
 - Prediction history storage using SQLite
 - Search and filtering of prediction records
@@ -234,13 +234,12 @@ Allows multiple patient records to be uploaded using CSV or Excel files.
 
 Users can:
 
-- download a CSV template
 - download an Excel template
 - upload multiple patient records
 - validate the uploaded data
 - generate predictions using all four models
 - compare model results
-- export batch results as CSV or Excel
+- export batch results as Excel
 
 Successful batch predictions are also automatically stored in prediction history.
 
@@ -333,7 +332,7 @@ ST_Slope
 
 The column names should not be modified.
 
-CSV and XLSX formats are supported.
+XLSX format is supported.
 
 Templates can be downloaded directly from the **Batch Prediction** tab.
 
