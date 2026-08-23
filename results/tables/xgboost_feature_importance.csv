@@ -1,0 +1,16 @@
+Feature,Importance
+ST_Slope_Up,0.40699318
+ChestPainType_ASY,0.07652384
+ExerciseAngina_N,0.062264424
+ST_Slope_Flat,0.06120381
+FastingBS_0,0.05943272
+FastingBS_1,0.058010876
+Sex_F,0.052210152
+ExerciseAngina_Y,0.04340893
+Sex_M,0.043378465
+Oldpeak,0.030932514
+ChestPainType_NAP,0.024172433
+MaxHR,0.022711737
+Cholesterol,0.02101263
+RestingBP,0.020414412
+ChestPainType_ATA,0.017329857

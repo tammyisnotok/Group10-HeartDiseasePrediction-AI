@@ -1,0 +1,9 @@
+Item,Value
+Best CV ROC-AUC,0.9329221827053805
+Selected k,15.0
+Number of Trees,500.0
+Maximum Depth,4.0
+Learning Rate,0.03
+Subsample,0.7
+Colsample Bytree,0.8
+Minimum Child Weight,7.0

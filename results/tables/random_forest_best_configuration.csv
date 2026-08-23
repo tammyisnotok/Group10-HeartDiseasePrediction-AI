@@ -1,0 +1,9 @@
+Item,Value
+Best CV ROC-AUC,0.9332666390118964
+Selected k,15
+Number of Trees,500
+Maximum Depth,20
+Minimum Samples Split,5
+Minimum Samples Leaf,4
+Maximum Features,log2
+Class Weight,balanced

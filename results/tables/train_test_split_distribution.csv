@@ -1,0 +1,5 @@
+Dataset,HeartDisease,Class Label,Count,Percentage Within Dataset
+Training,0,No Heart Disease,328,44.69
+Training,1,Heart Disease,406,55.31
+Testing,0,No Heart Disease,82,44.57
+Testing,1,Heart Disease,102,55.43

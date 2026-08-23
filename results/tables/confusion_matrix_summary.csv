@@ -1,0 +1,5 @@
+Model,True_Negatives,False_Positives,False_Negatives,True_Positives
+ANN,72,10,22,80
+SVM,69,13,11,91
+Random Forest,69,13,9,93
+XGBoost,70,12,11,91

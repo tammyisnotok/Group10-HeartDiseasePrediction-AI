@@ -1,0 +1,16 @@
+Model,Selected_Feature
+ANN,RestingBP
+ANN,Cholesterol
+ANN,MaxHR
+ANN,Oldpeak
+ANN,Sex_F
+ANN,Sex_M
+ANN,ChestPainType_ASY
+ANN,ChestPainType_ATA
+ANN,ChestPainType_NAP
+ANN,FastingBS_0
+ANN,FastingBS_1
+ANN,ExerciseAngina_N
+ANN,ExerciseAngina_Y
+ANN,ST_Slope_Flat
+ANN,ST_Slope_Up

@@ -1,0 +1,13 @@
+Feature,Missing Values,Missing Percentage
+Age,0,0.0
+Sex,0,0.0
+ChestPainType,0,0.0
+RestingBP,0,0.0
+Cholesterol,0,0.0
+FastingBS,0,0.0
+RestingECG,0,0.0
+MaxHR,0,0.0
+ExerciseAngina,0,0.0
+Oldpeak,0,0.0
+ST_Slope,0,0.0
+HeartDisease,0,0.0

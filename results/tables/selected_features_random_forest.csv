@@ -1,0 +1,16 @@
+Model,Selected_Feature
+Random Forest,RestingBP
+Random Forest,Cholesterol
+Random Forest,MaxHR
+Random Forest,Oldpeak
+Random Forest,Sex_F
+Random Forest,Sex_M
+Random Forest,ChestPainType_ASY
+Random Forest,ChestPainType_ATA
+Random Forest,ChestPainType_NAP
+Random Forest,FastingBS_0
+Random Forest,FastingBS_1
+Random Forest,ExerciseAngina_N
+Random Forest,ExerciseAngina_Y
+Random Forest,ST_Slope_Flat
+Random Forest,ST_Slope_Up

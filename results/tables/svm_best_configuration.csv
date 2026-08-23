@@ -1,0 +1,7 @@
+Item,Value
+Best CV ROC-AUC,0.9197039676172467
+Selected k,all
+C,0.5
+Gamma,0.1
+Kernel,poly
+Class Weight,balanced

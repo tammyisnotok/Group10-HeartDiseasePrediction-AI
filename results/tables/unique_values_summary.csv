@@ -1,0 +1,13 @@
+Feature,Unique Values
+Age,50
+Sex,2
+ChestPainType,4
+RestingBP,67
+Cholesterol,222
+FastingBS,2
+RestingECG,3
+MaxHR,119
+ExerciseAngina,2
+Oldpeak,53
+ST_Slope,3
+HeartDisease,2

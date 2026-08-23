@@ -1,0 +1,5 @@
+Model,Number_of_Selected_Features,Total_Transformed_Features,Features_Removed
+ANN,15,21,6
+Random Forest,15,21,6
+SVM,21,21,0
+XGBoost,15,21,6

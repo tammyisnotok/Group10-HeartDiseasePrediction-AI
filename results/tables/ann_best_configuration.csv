@@ -1,0 +1,8 @@
+Item,Value
+Best CV ROC-AUC,0.9214444212818196
+Selected k,15
+Hidden Layers,"(32,)"
+Activation,relu
+Alpha,0.01
+Learning Rate,0.01
+Early Stopping,True

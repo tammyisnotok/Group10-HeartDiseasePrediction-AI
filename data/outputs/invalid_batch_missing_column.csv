@@ -1,0 +1,6 @@
+Age,Sex,RestingBP,Cholesterol,FastingBS,RestingECG,MaxHR,ExerciseAngina,Oldpeak,ST_Slope
+63,M,139.0,217.0,1,ST,128,Y,1.2,Flat
+55,M,110.0,214.0,1,ST,180,N,0.4,Up
+59,F,130.0,338.0,1,ST,130,Y,1.5,Flat
+47,M,160.0,,0,Normal,124,Y,0.0,Flat
+50,M,145.0,,1,Normal,139,Y,0.7,Flat
