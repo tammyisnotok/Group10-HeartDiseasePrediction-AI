@@ -2274,7 +2274,7 @@ def show_model_detail_dialog(model_name):
                                 ).configure_view(
                                     stroke=None
                                 ),
-                                use_container_width=True
+                                width="stretch"
                             )        
                     # ---------------------------------------------
                     # IMPORTANT ERRORS ONLY
@@ -2493,7 +2493,7 @@ def show_model_detail_dialog(model_name):
                 
                 st.altair_chart(
                     roc_chart,
-                    use_container_width=True
+                    width="stretch"
                 )
                 
                 st.markdown("")
@@ -3565,13 +3565,13 @@ with single_patient_tab:
             prediction_submitted = st.form_submit_button(
                 "Generate Prediction with All Models",
                 type="primary",
-                use_container_width=True
+                width="stretch"
             )
 
     st.button(
         "Reset Form",
         on_click=reset_single_patient_form,
-        use_container_width=False
+        width="content"
     )
 
     if prediction_submitted:
@@ -4024,7 +4024,7 @@ with single_patient_tab:
                             f"open_model_detail_"
                             f"{model_name}"
                         ),
-                        use_container_width=True,
+                        width="stretch",
                         icon=":material/analytics:",
                         help=(
                             "Open this model's detailed "
@@ -4107,7 +4107,7 @@ with single_patient_tab:
                         "application/vnd.openxmlformats-officedocument."
                         "spreadsheetml.sheet"
                     ),
-                    use_container_width=True,
+                    width="stretch",
                     key="download_current_prediction"
                 )
         
@@ -4200,7 +4200,7 @@ with batch_prediction_tab:
             data=template_csv,
             file_name="heart_disease_batch_template.csv",
             mime="text/csv",
-            use_container_width=True
+            width="stretch"
         )
 
     with template_col2:
@@ -4212,7 +4212,7 @@ with batch_prediction_tab:
                 "application/vnd.openxmlformats-officedocument."
                 "spreadsheetml.sheet"
             ),
-            use_container_width=True
+            width="stretch"
         )
 
     st.divider()
@@ -4307,7 +4307,7 @@ with batch_prediction_tab:
             if st.button(
                 "Run Batch Prediction with All Models",
                 type="primary",
-                use_container_width=True
+                width="stretch"
             ):
 
                 batch_result = predict_batch(
@@ -4561,7 +4561,7 @@ with batch_prediction_tab:
                     "batch_prediction_output.csv"
                 ),
                 mime="text/csv",
-                use_container_width=True
+                width="stretch"
             )
 
         with excel_col:
@@ -4578,7 +4578,7 @@ with batch_prediction_tab:
                     "application/vnd.openxmlformats-officedocument."
                     "spreadsheetml.sheet"
                 ),
-                use_container_width=True
+                width="stretch"
             )
 
 
@@ -5140,7 +5140,7 @@ with history_tab:
                         "application/vnd.openxmlformats-officedocument."
                         "spreadsheetml.sheet"
                     ),
-                    use_container_width=True,
+                    width="stretch",
                     key=(
                         "download_selected_prediction_records"
                     )
@@ -5510,7 +5510,7 @@ with performance_tab:
         
         st.altair_chart(
             performance_chart,
-            use_container_width=True
+            width="stretch"
         )
 
 
@@ -5842,7 +5842,7 @@ with performance_tab:
 
         st.altair_chart(
             feature_chart,
-            use_container_width=True
+            width="stretch"
         )
         
         feature_importance_display = (
@@ -6187,8 +6187,9 @@ with about_system_tab:
             )
     
             st.metric(
-                label="",
-                value=len(models)
+                label="Models",
+                value=len(models),
+                label_visibility="collapsed"
             )
     
             st.caption(
@@ -6208,8 +6209,9 @@ with about_system_tab:
             )
     
             st.metric(
-                label="",
-                value=len(required_features)
+                label="Input Variables",
+                value=len(required_features),
+                label_visibility="collapsed"
             )
     
             st.caption(
@@ -6230,8 +6232,9 @@ with about_system_tab:
             )
     
             st.metric(
-                label="",
-                value=len(class_labels)
+                label="Prediction Classes",
+                value=len(class_labels),
+                label_visibility="collapsed"
             )
     
             st.caption(
@@ -6251,8 +6254,9 @@ with about_system_tab:
             )
     
             st.metric(
-                label="",
-                value=preferred_model_name
+                label="Selected Final Model",
+                value=preferred_model_name,
+                label_visibility="collapsed"
             )
     
             st.caption(
