@@ -13,6 +13,9 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from sklearn.pipeline import Pipeline
+from xgboost import XGBClassifier
+
 # ============================================================
 # PAGE CONFIGURATION
 # ============================================================
@@ -294,7 +297,17 @@ PREDICTION_HISTORY_DB_PATH = (
 
 MODEL_BUNDLE_PATH = (
     MODELS_DIR
-    / "model_bundle.joblib"
+    / "model_bundle_portable.joblib"
+)
+
+XGBOOST_PREPROCESSING_PATH = (
+    MODELS_DIR
+    / "xgboost_preprocessing.joblib"
+)
+
+XGBOOST_MODEL_PATH = (
+    MODELS_DIR
+    / "xgboost_model.ubj"
 )
 
 # ============================================================
@@ -306,15 +319,66 @@ def load_model_bundle():
 
     try:
 
-        return joblib.load(
+        # ----------------------------------------------------
+        # Load portable model bundle
+        # ----------------------------------------------------
+
+        bundle = joblib.load(
             MODEL_BUNDLE_PATH
         )
 
-    except FileNotFoundError:
+        # ----------------------------------------------------
+        # Load XGBoost preprocessing pipeline
+        # ----------------------------------------------------
+
+        xgboost_preprocessing = joblib.load(
+            XGBOOST_PREPROCESSING_PATH
+        )
+
+        # ----------------------------------------------------
+        # Load portable XGBoost classifier
+        # ----------------------------------------------------
+
+        xgboost_classifier = XGBClassifier()
+
+        xgboost_classifier.load_model(
+            XGBOOST_MODEL_PATH
+        )
+
+        # ----------------------------------------------------
+        # Rebuild complete XGBoost pipeline
+        # ----------------------------------------------------
+
+        xgboost_pipeline = Pipeline(
+            steps=[
+                *xgboost_preprocessing.steps,
+                (
+                    "classifier",
+                    xgboost_classifier
+                )
+            ]
+        )
+
+        # ----------------------------------------------------
+        # Restore XGBoost into the model bundle
+        # ----------------------------------------------------
+
+        bundle[
+            "models"
+        ][
+            "XGBoost"
+        ] = xgboost_pipeline
+
+        return bundle
+
+    except FileNotFoundError as error:
 
         st.error(
-            "Model bundle not found. "
-            "Please make sure models/model_bundle.joblib exists."
+            "One or more required model files could not be found."
+        )
+
+        st.error(
+            str(error)
         )
 
         st.stop()
@@ -325,7 +389,9 @@ def load_model_bundle():
             "The model bundle could not be loaded."
         )
 
-        st.error(str(error))
+        st.error(
+            str(error)
+        )
 
         st.stop()
 
@@ -5006,7 +5072,13 @@ with batch_prediction_tab:
                     """,
                     unsafe_allow_html=True
                 )
-
+            
+            # Small spacing before preview section
+            st.markdown(
+                "<div style='height: 12px;'></div>",
+                unsafe_allow_html=True
+            )
+            
             with st.expander(
                 "Preview uploaded data"
             ):
@@ -5242,12 +5314,56 @@ with batch_prediction_tab:
             width="stretch"
         )
 
+        # ============================================================
+        # FULL MODEL PREDICTION DETAILS
+        # ============================================================
+        
+        detailed_result_columns = []
+        
+        for model_name in models.keys():
+        
+            model_columns = [
+                f"{model_name} Predicted Class",
+                f"{model_name} Prediction",
+                f"{model_name} Absence Probability (%)",
+                f"{model_name} Presence Probability (%)"
+            ]
+        
+            detailed_result_columns.extend(
+                [
+                    column
+                    for column in model_columns
+                    if column in batch_output.columns
+                ]
+            )
+        
+        detailed_result_columns.extend(
+            [
+                column
+                for column in [
+                    "Presence Votes",
+                    "Absence Votes",
+                    "Model Agreement",
+                    "Selected Final Model"
+                ]
+                if column in batch_output.columns
+            ]
+        )
+        
         with st.expander(
-            "View complete results and input data"
+            "View Full Model Prediction Details"
         ):
-
+        
+            st.caption(
+                "This table provides the complete prediction output "
+                "from all four models, including predicted classes, "
+                "probabilities and model agreement."
+            )
+        
             st.dataframe(
-                batch_output,
+                batch_output[
+                    detailed_result_columns
+                ],
                 hide_index=True,
                 width="stretch"
             )
@@ -7110,17 +7226,15 @@ with performance_tab:
         )
 
     # --------------------------------------------------------
-    # Global Random Forest feature importance
+    # Overall Random Forest Feature Importance
     # --------------------------------------------------------
     st.divider()
     st.markdown(
-        "### Global Random Forest Feature Importance"
+        "### Overall Random Forest Feature Importance"
     )
 
     st.write(
-        "This analysis shows which original input variables were "
-        "used most strongly by the fitted Random Forest across "
-        "the training dataset."
+        "This analysis shows which original patient input variables were most influential to the Random Forest model overall across the training dataset."
     )
     
     st.caption(

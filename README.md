@@ -36,6 +36,7 @@ The prototype provides the following functions:
 - ROC curve and ROC-AUC analysis
 - Selected feature display for each model
 - Random Forest global feature-importance analysis
+- Cross-platform model loading for macOS and Windows
 
 ---
 
@@ -52,6 +53,9 @@ Group10-HeartDiseasePrediction-AI/
 │   ├── raw/
 │   └── outputs/
 ├── models/
+│   ├── model_bundle_portable.joblib
+│   ├── xgboost_preprocessing.joblib
+│   ├── xgboost_model.ubj
 │   ├── model_bundle.joblib
 │   ├── ann_pipeline.joblib
 │   ├── svm_pipeline.joblib
@@ -74,7 +78,7 @@ Group10-HeartDiseasePrediction-AI/
   Python packages and versions required to run the prototype.
 
 - `models/`  
-  Contains the trained machine-learning pipelines and the saved model bundle used by the Streamlit application.
+  Contains the trained machine-learning models, preprocessing components and portable model files used by the Streamlit application.
 
 - `data/`  
   Contains the project dataset, batch-prediction files and the SQLite prediction-history database.
@@ -145,7 +149,7 @@ The output should show Python 3.12.x.
 Install the dependencies listed in `requirements.txt`:
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 The main packages include:
@@ -186,6 +190,20 @@ If XGBoost fails to load because of a missing DLL or Visual C++ runtime error, i
 
 In most Windows environments where the required runtime is already installed, no additional XGBoost setup is necessary.
 
+If an existing user-level Python installation interferes with the Conda environment, run:
+
+```bat
+set PYTHONNOUSERSITE=1
+```
+
+Then start the application using:
+
+```bat
+python -m streamlit run app.py
+```
+
+This is a troubleshooting step and is not normally required in a clean Python environment.
+
 ---
 
 ## Running the Prototype
@@ -193,7 +211,7 @@ In most Windows environments where the required runtime is already installed, no
 After installing all requirements, start the application using:
 
 ```bash
-streamlit run app.py
+python -m streamlit run app.py
 ```
 
 Streamlit should automatically open the prototype in the default web browser.
@@ -230,7 +248,7 @@ Successful predictions are automatically stored in prediction history.
 
 ### 2. Batch Prediction
 
-Allows multiple patient records to be uploaded using CSV or Excel files.
+Allows multiple patient records to be uploaded using an Excel (.xlsx) file.
 
 Users can:
 
@@ -407,13 +425,13 @@ streamlit: command not found
 appears, ensure the correct Python environment has been activated and run:
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 Then retry:
 
 ```bash
-streamlit run app.py
+python -m streamlit run app.py
 ```
 
 ### XGBoost Cannot Be Loaded on macOS
@@ -430,15 +448,17 @@ Then restart the application.
 
 Ensure that the Microsoft Visual C++ Redistributable is installed, then restart the application.
 
-### Model Bundle Not Found
+### Portable Model Files Not Found
 
-Ensure the following file exists:
+Ensure the following files exist:
 
 ```text
-models/model_bundle.joblib
+models/model_bundle_portable.joblib
+models/xgboost_preprocessing.joblib
+models/xgboost_model.ubj
 ```
 
-The application should be started from the root project directory containing `app.py`, `models/`, `data/` and `results/`.
+The application should be started from the root project directory containing `app.py`, `models/`, `data/`, `results/`, `requirements.txt` and `README.md`.
 
 ---
 
