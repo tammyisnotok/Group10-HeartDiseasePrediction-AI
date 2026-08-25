@@ -1776,15 +1776,15 @@ def load_batch_file(uploaded_file):
     try:
 
         filename = uploaded_file.name.lower()
-        
+
         if filename.endswith(".xlsx"):
-        
+
             data = pd.read_excel(
                 uploaded_file
             )
-        
+
         else:
-        
+
             return {
                 "success": False,
                 "errors": [
@@ -1792,6 +1792,10 @@ def load_batch_file(uploaded_file):
                     "Please upload an XLSX file."
                 ]
             }
+
+        # ----------------------------------------------------
+        # Check empty file
+        # ----------------------------------------------------
 
         if data.empty:
 
@@ -1801,6 +1805,49 @@ def load_batch_file(uploaded_file):
                     "The uploaded file contains no patient records."
                 ]
             }
+
+        # ----------------------------------------------------
+        # Check required columns immediately after upload
+        # ----------------------------------------------------
+
+        missing_columns = [
+            column
+            for column in required_features
+            if column not in data.columns
+        ]
+
+        unexpected_columns = [
+            column
+            for column in data.columns
+            if column not in required_features
+        ]
+
+        column_errors = []
+
+        if missing_columns:
+
+            column_errors.append(
+                "Missing required column(s): "
+                + ", ".join(missing_columns)
+            )
+
+        if unexpected_columns:
+
+            column_errors.append(
+                "Unexpected column(s): "
+                + ", ".join(unexpected_columns)
+            )
+
+        if column_errors:
+
+            return {
+                "success": False,
+                "errors": column_errors
+            }
+
+        # ----------------------------------------------------
+        # File is correctly structured
+        # ----------------------------------------------------
 
         return {
             "success": True,
