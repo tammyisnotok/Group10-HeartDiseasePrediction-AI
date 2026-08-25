@@ -262,11 +262,7 @@ div[role="dialog"] h2 {
     font-weight: 500;
     line-height: 1.1;
 }
-[data-testid="stFileUploaderDropzone"] {
-    border: 1px solid #ff4b4b !important;
-    border-radius: 8px !important;
-    background-color: rgba(255, 75, 75, 0.08) !important;
-}
+
     </style>
     """),
     unsafe_allow_html=True
@@ -5042,16 +5038,37 @@ with batch_prediction_tab:
 
     st.divider()
 
+    # ========================================================
+    # BATCH FILE UPLOADER STATE
+    # ========================================================
+
     uploaded_file = st.file_uploader(
         "Upload completed Excel file",
         type=["xlsx"],
         help=(
             "Supported format: XLSX. The file must contain "
             "exactly the required input columns."
-        )
+        ),
+        key="batch_file_uploader"
     )
 
     if uploaded_file is None:
+
+        # Clear old batch results when the uploaded file is removed
+        st.session_state.pop(
+            "batch_prediction_result",
+            None
+        )
+
+        st.session_state.pop(
+            "batch_prediction_model",
+            None
+        )
+
+        st.session_state.pop(
+            "batch_saved_prediction_ids",
+            None
+        )
 
         st.info(
             "No file has been uploaded yet. Download a template, "
@@ -5087,9 +5104,9 @@ with batch_prediction_tab:
                 2,
                 gap="medium"
             )
-            
+
             with upload_col1:
-            
+
                 st.markdown(
                     f"""
                     <div class="upload-stat-card">
@@ -5103,9 +5120,9 @@ with batch_prediction_tab:
                     """,
                     unsafe_allow_html=True
                 )
-            
+
             with upload_col2:
-            
+
                 st.markdown(
                     f"""
                     <div class="upload-stat-card">
@@ -5119,16 +5136,16 @@ with batch_prediction_tab:
                     """,
                     unsafe_allow_html=True
                 )
-            
-            # Small spacing before preview section
+
             st.markdown(
                 "<div style='height: 12px;'></div>",
                 unsafe_allow_html=True
             )
-            
+
             with st.expander(
                 "Preview uploaded data"
             ):
+
                 st.dataframe(
                     uploaded_data,
                     hide_index=True,
@@ -5138,7 +5155,8 @@ with batch_prediction_tab:
             if st.button(
                 "Run Batch Prediction with All Models",
                 type="primary",
-                width="stretch"
+                width="stretch",
+                key="run_batch_prediction"
             ):
 
                 batch_result = predict_batch(
@@ -5155,37 +5173,33 @@ with batch_prediction_tab:
                         st.error(error)
 
                 else:
-                
+
                     batch_output = (
                         batch_result[
                             "results"
                         ].copy()
                     )
-                
+
                     st.session_state[
                         "batch_prediction_result"
                     ] = batch_output
-                
+
                     st.session_state[
                         "batch_prediction_model"
                     ] = batch_result["model"]
-                
-                    # ------------------------------------------------
-                    # Save all batch records to prediction history
-                    # ------------------------------------------------
-                
+
                     try:
-                
+
                         saved_batch_prediction_ids = (
                             save_batch_predictions_to_history(
                                 batch_output
                             )
                         )
-                
+
                         st.session_state[
                             "batch_saved_prediction_ids"
                         ] = saved_batch_prediction_ids
-                
+
                         st.toast(
                             (
                                 f"{len(saved_batch_prediction_ids)} "
@@ -5193,18 +5207,18 @@ with batch_prediction_tab:
                             ),
                             icon="🕒"
                         )
-                
+
                     except Exception as history_error:
-                
+
                         st.warning(
                             "The batch predictions were generated successfully, "
                             "but the records could not be saved to history."
                         )
-                
+
                         with st.expander(
                             "Show batch history-saving error"
                         ):
-                
+
                             st.code(
                                 str(history_error)
                             )
@@ -5272,7 +5286,7 @@ with batch_prediction_tab:
             hide_index=True,
             width="stretch"
         )
-
+        st.divider()
         st.markdown(
             "### Detailed Four-Model Prediction Results"
         )
@@ -5360,60 +5374,8 @@ with batch_prediction_tab:
             hide_index=True,
             width="stretch"
         )
+        st.divider()
 
-        # ============================================================
-        # FULL MODEL PREDICTION DETAILS
-        # ============================================================
-        
-        detailed_result_columns = []
-        
-        for model_name in models.keys():
-        
-            model_columns = [
-                f"{model_name} Predicted Class",
-                f"{model_name} Prediction",
-                f"{model_name} Absence Probability (%)",
-                f"{model_name} Presence Probability (%)"
-            ]
-        
-            detailed_result_columns.extend(
-                [
-                    column
-                    for column in model_columns
-                    if column in batch_output.columns
-                ]
-            )
-        
-        detailed_result_columns.extend(
-            [
-                column
-                for column in [
-                    "Presence Votes",
-                    "Absence Votes",
-                    "Model Agreement",
-                    "Selected Final Model"
-                ]
-                if column in batch_output.columns
-            ]
-        )
-        
-        with st.expander(
-            "View Full Model Prediction Details"
-        ):
-        
-            st.caption(
-                "This table provides the complete prediction output "
-                "from all four models, including predicted classes, "
-                "probabilities and model agreement."
-            )
-        
-            st.dataframe(
-                batch_output[
-                    detailed_result_columns
-                ],
-                hide_index=True,
-                width="stretch"
-            )
 
         st.markdown(
             "### Download Prediction Results"
